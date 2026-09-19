@@ -1,0 +1,6 @@
+# Code owners for this repository.
+#
+# @openaustralia/staff has write access here, so GitHub can actually require
+# its review. A team with no access to the repository is silently ignored.
+
+* @openaustralia/staff
