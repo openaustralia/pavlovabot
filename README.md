@@ -89,10 +89,22 @@ so this can't be automated:
 
 ## Adopting this in a new repo
 
-1. Confirm PavlovaBot is installed on the repo (ask an org admin) and that
-   the repo is in the `PAVLOVABOT_APP_ID` / `PAVLOVABOT_PRIVATE_KEY`
-   Dependabot secret's repository list.
-2. Add a caller workflow, e.g. `.github/workflows/dependabot-tapioca.yml`:
+**Current access:** only `openaustralia/planningalerts` has been granted the
+`PAVLOVABOT_APP_ID` and `PAVLOVABOT_PRIVATE_KEY` secrets, and only it has the
+App installed. The workflow will not work in any other repo until these steps
+are done, the first two by an org admin:
+
+1. Install the App on the repo. Open the
+   [PavlovaBot installation settings](https://github.com/organizations/openaustralia/settings/installations/163111443)
+   and add the repo under "Repository access".
+2. Grant the repo access to both secrets. Open the
+   [organisation Dependabot secrets](https://github.com/organizations/openaustralia/settings/secrets/dependabot),
+   edit `PAVLOVABOT_APP_ID` and `PAVLOVABOT_PRIVATE_KEY`, and add the repo to
+   each one's "Selected repositories". Use the **Dependabot** tab, not Actions.
+   Leave both secrets on "Selected repositories". Do not switch them to "All
+   repositories", because the private key can push to every repo the App is
+   installed on.
+3. Add a caller workflow, e.g. `.github/workflows/dependabot-tapioca.yml`:
 
    ```yaml
    name: Dependabot Tapioca
@@ -116,6 +128,6 @@ so this can't be automated:
          private-key: ${{ secrets.PAVLOVABOT_PRIVATE_KEY }}
    ```
 
-3. Open a real Dependabot bundler PR (or wait for the next one) and check
+4. Open a real Dependabot bundler PR (or wait for the next one) and check
    that PavlovaBot's job actually runs and, on success, that the repo's
    normal CI re-triggers on its push.
