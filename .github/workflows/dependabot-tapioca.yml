@@ -1,0 +1,121 @@
+# Reusable workflow: regenerates a Ruby app's Sorbet Tapioca RBI files on a
+# Dependabot bundler PR, and pushes the result back to that PR only once it's
+# confirmed to type check cleanly. See README.md for why this exists.
+#
+# Call it from the adopting repo like:
+#
+#   jobs:
+#     update_tapioca:
+#       if: >
+#         github.actor == 'dependabot[bot]' &&
+#         startsWith(github.head_ref, 'dependabot/bundler/') &&
+#         github.event.pull_request.head.repo.full_name == github.repository
+#       uses: openaustralia/pavlovabot/.github/workflows/dependabot-tapioca.yml@main
+#       secrets:
+#         app-id: ${{ secrets.PAVLOVABOT_APP_ID }}
+#         private-key: ${{ secrets.PAVLOVABOT_PRIVATE_KEY }}
+#
+# PAVLOVABOT_APP_ID and PAVLOVABOT_PRIVATE_KEY must be added as Dependabot
+# secrets (repo or org Settings > Secrets and variables > Dependabot), not
+# Actions secrets. GitHub treats any workflow run actored by dependabot[bot]
+# like a fork run and withholds ordinary Actions secrets from it entirely -
+# Dependabot secrets are the separate store that is available to it. See
+# https://docs.github.com/en/code-security/reference/supply-chain-security/troubleshoot-dependabot/dependabot-on-actions
+#
+# If regenerating the RBI surfaces a real Sorbet error rather than just a
+# stale file, this job fails and pushes nothing. That's deliberate: a real
+# type conflict needs a human to look at it, not an automatic commit over it.
+name: Dependabot Tapioca
+
+on:
+  workflow_call:
+    secrets:
+      app-id:
+        required: true
+      private-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  update_tapioca:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:15-3.3
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: "postgis://postgres:postgres@localhost:5432/rails_test"
+    permissions:
+      contents: write
+    concurrency:
+      group: dependabot-tapioca-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Mint a PavlovaBot installation token
+        id: pavlovabot
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.private-key }}
+
+      - name: Checkout Dependabot branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ steps.pavlovabot.outputs.token }}
+
+      - name: Install Ruby and gems
+        uses: ruby/setup-ruby@v1.321.0
+        with:
+          bundler-cache: true
+
+      - name: Create database
+        run: bin/rails db:create
+
+      - name: Set up database schema
+        run: bin/rails db:schema:load
+
+      - name: Regenerate Tapioca RBI files
+        run: |
+          bin/tapioca gem
+          bin/tapioca dsl
+          bin/tapioca dsl --environment=test
+
+      - name: Type check the regenerated RBIs
+        run: bin/srb
+
+      - name: Explain how to fix a real type error
+        if: failure()
+        run: |
+          echo "::error::Regenerating the RBI surfaced a real Sorbet error, not just a stale file. Nothing has been pushed to this branch."
+          echo ""
+          echo "To reproduce and fix locally, in the adopting repo:"
+          echo "  bin/tapioca gem"
+          echo "  bin/tapioca dsl"
+          echo "  bin/rake ci:type"
+
+      - name: Commit and push regenerated RBI files
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet --exit-code -- sorbet; then
+            echo "No Tapioca changes to commit"
+            exit 0
+          fi
+
+          git config user.name "pavlovabot[bot]"
+          git config user.email "pavlovabot[bot]@users.noreply.github.com"
+          git add sorbet
+          git commit -m "Update Tapioca RBI files"
+          git push origin HEAD:$PR_HEAD_REF

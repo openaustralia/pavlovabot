@@ -1,0 +1,13 @@
+{
+  "name": "PavlovaBot",
+  "url": "https://github.com/openaustralia/pavlovabot",
+  "description": "Regenerates and verifies Sorbet Tapioca RBI files on Dependabot bundler PRs for openaustralia repos, so a routine gem bump doesn't fail ci:type for no real reason.",
+  "public": false,
+  "hook_attributes": {
+    "active": false
+  },
+  "default_permissions": {
+    "contents": "write"
+  },
+  "default_events": []
+}
